@@ -1,10 +1,19 @@
-> :set -XNoMonomorphismRestriction
-
+# Monads!
+## Preamble
 In my attempt to learn Haskell, become comfortable with monads, and functional programming concepts in general,
 I am following along with the blog post, "You Could Have Invented Monads! (And Maybe You Already Have.)"
 http://blog.sigfpe.com/2006/08/you-could-have-invented-monads-and.html
 
-== Part One: debugging
+Everything in this file can be run (in order) with `ghci`. I was using:
+
+```
+> ghci --version
+The Glorious Glasgow Haskell Compilation System, version 7.8.3
+> ghci
+> :set -XNoMonomorphismRestriction
+```
+
+## Part One: debugging
 
 In the first example, we have a set of pure functions that we want to debug. Let's say we have two functions that
 manipulate floats:
@@ -190,7 +199,7 @@ Next, in exercise three, we show that `lift f * lift g = lift (f.g)` (this is pr
 
 This makes intuitive sense as well.
 
-== Part Two: dealing with multivalued functions
+## Part Two: dealing with multivalued functions
 
 I got very distracted trying to figure out how to accurately compute complex roots and cube roots. First, those definitions:
 
@@ -261,7 +270,7 @@ Note, importantly, that when the article says `bind f . g`, this is equivalent t
 (bind sqrt) . cbrt :: Complex Float -> [Complex Float]
 ```
 
-== Wrap-up
+## Wrap-up
 
 There's a third example about random numbers that I didn't feel like implementing at this stage. 
 
