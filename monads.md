@@ -209,6 +209,7 @@ and you can't get a `Complex Float` by multiplying `r * (1 :+ 0)` because then i
 
 
 ```
+> import Data.Complex
 > let radius (a :+ b) = ((a ** 2) + (b ** 2)) ** (1/2)
 > let theta (a :+ b) = (atan (b / a))
 > polar (3 :+ 4) == (radius (3 :+ 4), theta (3 :+ 4))
@@ -270,9 +271,7 @@ Note, importantly, that when the article says `bind f . g`, this is equivalent t
 (bind sqrt) . cbrt :: Complex Float -> [Complex Float]
 ```
 
-## Wrap-up
-
-There's a third example about random numbers that I didn't feel like implementing at this stage. 
+## Haskell monad syntactic sugar
 
 So at this point we've seen the same pattern twice: some data type and functions for which we define `bind` and `unit` - in the Haskell world, `unit` is known as `return`. As we've seen in
 both examples, `lift` and `unit` are equivalent so we can think of `return` as being `unit` or `lift`, whichever makes more sense. Together, these should obey the Monad Laws (look on Wikipedia for these).
@@ -283,4 +282,96 @@ It is then revealed that we have implemented all the components parts of a monad
 
 Back in the world of Haskell, we need to remember a few handy shorthands. `bind f x` is written `x >>= f`. And in order to override `return` and `>>=`, we need to use type classes.
 
-Perhaps I will return to this later and rewrite all the examples (as an appendix or another section) to use `>>=` and `do` syntax.
+## Rewriting our example in standard Haskell
+
+In the standard Haskell world, our `Debuggable` class is really `Control.Monad.Writer`; `Multivalued` is `Control.Monad.List`; `Randomised` (which we did not implement above) is `Control.Monad.State`.
+
+Let's experiment with using some of the built-in monad equivalents:
+
+```
+> :t \x -> writer (x+1, "inc.")
+\x -> writer (x+1, "inc.")
+  :: (MonadWriter [Char] m, Num a) => a -> m a
+> :t return 7 >>= \x -> writer (x+1, "inc.")
+ return 7 >>= \x -> writer (x+1, "inc.")
+   :: (MonadWriter [Char] m, Num b) => m b
+> :t runWriter
+runWriter :: Writer w a -> (a, w)
+> runWriter $ return 7 >>= \x -> writer (x+1, "inc.")
+(8,"inc.")
+```
+
+Great! So let's dig into how `Writer` is implemented and see if we can make an equivalent `Debuggable` monad. This StackOverflow question has a great explanation of how
+`Writer` works, and how to play with it in `ghci`: http://stackoverflow.com/questions/11684321/how-to-play-with-control-monad-writer-in-haskell
+
+And, in my attempt to understand the "backwards arrow" `<-` and `do` syntax: https://wiki.haskell.org/Do_notation_considered_harmful https://wiki.haskell.org/Things_to_avoid#do_notation
+
+The following is equivalent to our above example:
+
+```
+> :{
+| runWriter $ do let x = 7
+|                y <- writer (x+1, "inc.")
+|                return y
+| :}
+(8,"inc.")
+```
+
+And the following two are equivalent:
+
+```
+> runWriter $ return 7
+(7,())
+> runWriter $ do return 7
+(7,())
+```
+
+Now let's turn `Debuggable` into a monad:
+
+```
+> :{
+newtype Debuggable a = Debuggable { runDebuggable :: (a,String) }
+instance Monad Debuggable where
+  return x = Debuggable(x,"")
+  Debuggable (gx,gs) >>= f = let Debuggable(fx,fs) = f gx in Debuggable(fx,gs++fs)
+
+:}
+> runDebuggable $ return 7
+(7,"")
+> runDebuggable $ (return 5) >>= (\x -> Debuggable(x+5, "add"))
+(10,"add")
+```
+
+Hooray!
+
+The `newtype` syntax befuddled me for a while. The above `newtype` line is equivalent to:
+
+```
+data Debuggable a = Debuggable a String
+runDebuggable :: Debuggable a -> (a,String)
+runDebuggable (Debuggable a b) = (a,b)
+```
+
+Now for `Multivalued`:
+
+```
+> :{
+newtype Multivalued a = Multivalued { runMultivalued :: [a] }
+instance Monad Multivalued where
+  return x = Multivalued x
+  Multivalued (x:xs) >>= f = let y = map f (x:xs) in (Multivalued $ concat $ map (\(Multivalued (z:zs)) -> (z:zs)) y)
+
+:}
+> import Data.Complex
+> runMultivalued $ return (3 :+ 4)
+[3 :+ 4]
+> let cbrt x = let (r,t) = (extractRT x) in let r' = (r ** (1/3)) in let f x = (r' * exp(i * ((1/3)*t + x*pi))) in Multivalued [f 0, f (2/3), f (-2/3)]
+> let sqrt x = let e = exp 1 in let (r,t) = (extractRT x) in let z = ((r ** (1/2)) * (e ** (i * (t/2)))) in Multivalued [z, -z]
+> let multiPow y x = Multivalued [x ** y]
+> runMultivalued $ return (3 :+ 4) >>= sqrt >>= cbrt >>= multiPow 6
+[3.0000012 :+ 4.000002,3.0000005 :+ 3.9999995,3.0000014 :+ 3.9999948,3.0000012 :+ 4.000002,3.0000005 :+ 3.9999995,3.0000014 :+ 3.9999948]
+```
+
+Huzzah! Amazing!
+
+To finish these, we will need to `cabal install random` (in particular to `import System.Random` below).
