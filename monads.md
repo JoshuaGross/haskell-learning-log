@@ -358,7 +358,7 @@ Now for `Multivalued`:
 > :{
 newtype Multivalued a = Multivalued { runMultivalued :: [a] }
 instance Monad Multivalued where
-  return x = Multivalued x
+  return x = Multivalued [x]
   Multivalued (x:xs) >>= f = let y = map f (x:xs) in (Multivalued $ concat $ map (\(Multivalued (z:zs)) -> (z:zs)) y)
 
 :}
