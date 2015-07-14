@@ -373,5 +373,3 @@ instance Monad Multivalued where
 ```
 
 Huzzah! Amazing!
-
-To finish these, we will need to `cabal install random` (in particular to `import System.Random` below).
