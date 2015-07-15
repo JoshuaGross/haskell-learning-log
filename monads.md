@@ -41,8 +41,8 @@ strings:
    f' :: Float -> (Float, String)
 > :t g
    g' :: Float -> (Float, String)
-> f' 1 2
-   (3.0,"Added 1.0 and 2.0")
+> f' 1
+   (6.0,"Added 1.0 and 5")
 ```
 
 The article calls f' and g' "debuggable functions".
@@ -153,7 +153,7 @@ bind' f' g' :: Float -> (Float, [Char])
 ```
 
 Next the article asks us to implement an identify function, a unit. Under normal composition, `f.id=f` and `id.f=f`, so we expect that this `unit=id'` has
-the property `unit*f=f*unit=f*unit=f`.
+the property `unit*f=f*unit=f`.
 
 This is simple to implement and verify (note that our original function `bind'`, which added commas between debug strings, made this identity impossible).
 
@@ -163,8 +163,18 @@ This is simple to implement and verify (note that our original function `bind'`,
 bind unit :: (t1, [Char]) -> (t1, [Char])
 ```
 
-This actually isn't optimal since our `bind` and `bind'` expects `[a]` as debugging output, and our `unit` constrains us to only using `String`. Alas, we
-will live with this for now. Let's verify that it has the expected behaviour:
+This actually isn't optimal since our `bind` and `bind'` expects `[a]` as debugging output, and our `unit` constrains us to only using `String`.
+
+Josh Ball kindly pointed out to me that we don't have to do this, since `String` is just an alias for `[Char]`. `'a':[] == "a"` and `"a" ++ [] == "a"`, so don't need to
+constrain our `unit` to working with just `String`:
+
+```
+> let unit x = (x,[])
+> :t bind unit
+bind unit :: (t1, [a]) -> (t1, [a])
+```
+
+Let's verify that it has the expected behaviour:
 
 ```
 > :t bind' unit f'
@@ -182,22 +192,26 @@ Next we're introduced to the idea of `lift`: that is, turning _any_ function int
 ```
 > let lift f = unit . f
 > :t lift
-lift :: (a -> b) -> a -> (b, [Char])
-> let lift = unit
-> :t lift
-lift :: (a -> b) -> a -> (b, [Char])
+lift :: (a -> b) -> a -> (b, [t1])
 ```
 
 Next, in exercise three, we show that `lift f * lift g = lift (f.g)` (this is probably a monad law). Without being too rigorous:
 
 ```
 > bind' (lift f) (lift g) 4
-(7.0,"")
+(7.0,[])
 > (lift f.g) 4
-(7.0,"")
+(7.0,[])
 ```
 
 This makes intuitive sense as well.
+
+As an aside, if the `[]` bothers us, we can coerce it to a string explicitly:
+
+```
+> (lift f.g) 4 :: (Float,String)
+(7.0,"")
+```
 
 ## Part Two: dealing with multivalued functions
 
