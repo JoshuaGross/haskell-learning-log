@@ -41,7 +41,7 @@ strings:
    f' :: Float -> (Float, String)
 > :t g
    g' :: Float -> (Float, String)
-> f' 1 2
+> f' 1 2 -- doesn't type check
    (3.0,"Added 1.0 and 2.0")
 ```
 
@@ -153,18 +153,17 @@ bind' f' g' :: Float -> (Float, [Char])
 ```
 
 Next the article asks us to implement an identify function, a unit. Under normal composition, `f.id=f` and `id.f=f`, so we expect that this `unit=id'` has
-the property `unit*f=f*unit=f*unit=f`.
+the property `unit*f=f*unit=f`.
 
 This is simple to implement and verify (note that our original function `bind'`, which added commas between debug strings, made this identity impossible).
 
 ```
-> let unit x = (x,"")
+> let unit x = (x,[])
 > :t bind unit
-bind unit :: (t1, [Char]) -> (t1, [Char])
+bind unit :: (t1, [a]) -> (t1, [a])
 ```
 
-This actually isn't optimal since our `bind` and `bind'` expects `[a]` as debugging output, and our `unit` constrains us to only using `String`. Alas, we
-will live with this for now. Let's verify that it has the expected behaviour:
+Let's verify that it has the expected behaviour:
 
 ```
 > :t bind' unit f'
@@ -189,6 +188,38 @@ lift :: (a -> b) -> a -> (b, [Char])
 ```
 
 Next, in exercise three, we show that `lift f * lift g = lift (f.g)` (this is probably a monad law). Without being too rigorous:
+
+What Dan is calling * is called <=< in Control.Monad, also known as kleisli composition.
+
+I don't think the lift equation is a monad law. I think it's just a [theorem you get for free](http://ttic.uchicago.edu/~dreyer/course/papers/wadler.pdf). Because...
+
+Redefining lift more generally (to work with all monads)
+
+> let lift = (return .)
+> :t lift
+lift :: Monad m => (a -> b) -> a -> m b
+
+We can check the type of the left-hand side of the equation:
+
+> :t \f g -> lift f <=< lift g
+\f g -> lift f <=< lift g
+  :: Monad m => (b -> c) -> (a -> b) -> a -> m c
+
+You can tell by staring at the type that there's really only one thing the function can do, and it must involve `f . g`.
+
+Here's the monad laws in terms of return and >>=:
+
+return a >>= k  ==  k a
+m >>= return  ==  m
+m >>= (\x -> k x >>= h)  ==  (m >>= k) >>= h
+
+Here's the monad laws in terms of return and >=> (which is the flip of <=< or *):
+
+return >=> g == g
+f >=> return == f
+(f >=> g) >=> h == f >=> (g >=> h)
+
+See section 3 of https://wiki.haskell.org/Monad_laws
 
 ```
 > bind' (lift f) (lift g) 4
@@ -251,6 +282,28 @@ Nice! The article implements bind exactly the same way, but slightly more concis
 > let bind f x = concat (map f x)
 ```
 
+Spoiler:
+the generalized version of `concat` is `Control.Monad.join`,
+the generalized verson of `map` is `Data.Functor.fmap`.
+
+Monad could have (and probably should have) been defined like this:
+
+class (Applicative m) => Monad m where
+  join :: m (m a) -> m a
+
+and then >>= would be a library function instead of something you had to implement
+
+> let (>>=) f x = join (fmap f x)
+
+But instead the standard library did it the opposite way (before applicatives had been discovered by mathematicians) - you must implement >>=, but you get join for free as a library function.
+
+Fun exercise: implement join
+
+join :: (Monad m) => m (m a) -> m a
+join = ???
+
+You can see the answer in the [standard library source code](https://hackage.haskell.org/package/base-4.7.0.2/docs/src/Control-Monad.html#join)
+
 Next, we need to define a unit, such that `bind unit (f x) = bind f (unit x) = f x`.
 
 ```
@@ -266,7 +319,7 @@ Next, we define `lift`, so that `f * g == (bind f) . g` and `lift f == lift (uni
 Note, importantly, that when the article says `bind f . g`, this is equivalent to `(bind f) . g`, NOT `bind (f . g)`. This is easy to see, and the latter won't type-check anyway.
 
 ```
-> let lift = unit
+> let lift = (unit .)
 > :t (bind sqrt) . cbrt
 (bind sqrt) . cbrt :: Complex Float -> [Complex Float]
 ```
@@ -275,6 +328,20 @@ Note, importantly, that when the article says `bind f . g`, this is equivalent t
 
 So at this point we've seen the same pattern twice: some data type and functions for which we define `bind` and `unit` - in the Haskell world, `unit` is known as `return`. As we've seen in
 both examples, `lift` and `unit` are equivalent so we can think of `return` as being `unit` or `lift`, whichever makes more sense. Together, these should obey the Monad Laws (look on Wikipedia for these).
+
+lift != unit
+
+> :t lift
+lift :: (a -> b) -> a -> (b, [t1])
+> :t unit
+unit :: t -> (t, [t1])
+
+`lift` doesn't have an equivalent in the haskell libraries afaik, but you can define it easily enough:
+
+> let lift f = return . f
+> :t lift
+lift :: Monad m => (a -> b) -> a -> m b
+
 It is expected but not verified by GHCI.
 
 It is then revealed that we have implemented all the components parts of a monad, twice. A monad is the 3-tuple `(m,unit,bind)` where `m` is the type-class `Debuggable`, `Multivalued`,
@@ -347,9 +414,9 @@ Hooray!
 The `newtype` syntax befuddled me for a while. The above `newtype` line is equivalent to:
 
 ```
-data Debuggable a = Debuggable a String
+data Debuggable a = Debuggable (a, String)
 runDebuggable :: Debuggable a -> (a,String)
-runDebuggable (Debuggable a b) = (a,b)
+runDebuggable (Debuggable x) = x
 ```
 
 Now for `Multivalued`:
@@ -373,3 +440,5 @@ instance Monad Multivalued where
 ```
 
 Huzzah! Amazing!
+
+:)
