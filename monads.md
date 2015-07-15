@@ -195,7 +195,7 @@ Next we're introduced to the idea of `lift`: that is, turning _any_ function int
 lift :: (a -> b) -> a -> (b, [t1])
 ```
 
-Next, in exercise three, we show that `lift f * lift g = lift (f.g)` (this is probably a monad law). Without being too rigorous:
+Next, in exercise three, we show that `lift f * lift g = lift (f.g)` (I thought this was a monad law, but it's not - see below). Without being too rigorous:
 
 ```
 > bind' (lift f) (lift g) 4
@@ -212,6 +212,19 @@ As an aside, if the `[]` bothers us, we can coerce it to a string explicitly:
 > (lift f.g) 4 :: (Float,String)
 (7.0,"")
 ```
+
+### An aside on `*`, kleisli composition
+@sciolizer made the following comments on this document: 
+
+> @sciolizer: What Dan is calling * is called <=< in Control.Monad, also known as kleisli composition.
+> I don't think the lift equation is a monad law. I think it's just a [theorem you get for free](http://ttic.uchicago.edu/~dreyer/course/papers/wadler.pdf). Because...
+> Redefining lift more generally (to work with all monads)
+> ```
+> > let lift = (return .)
+> > :t lift
+> lift :: Monad m => (a -> b) -> a -> m b
+> ```
+
 
 ## Part Two: dealing with multivalued functions
 
