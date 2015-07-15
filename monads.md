@@ -216,7 +216,7 @@ As an aside, if the `[]` bothers us, we can coerce it to a string explicitly:
 ### An aside on `*`, kleisli composition
 @sciolizer made the following comments on this document: 
 
-> @sciolizer: What Dan is calling * is called <=< in Control.Monad, also known as kleisli composition.
+> @sciolizer: What Dan is calling `*` is called `<=<` in Control.Monad, also known as kleisli composition.
 > I don't think the lift equation is a monad law. I think it's just a [theorem you get for free](http://ttic.uchicago.edu/~dreyer/course/papers/wadler.pdf). Because...
 > Redefining lift more generally (to work with all monads)
 > ```
@@ -224,7 +224,33 @@ As an aside, if the `[]` bothers us, we can coerce it to a string explicitly:
 > > :t lift
 > lift :: Monad m => (a -> b) -> a -> m b
 > ```
-
+> 
+> We can check the type of the left-hand side of the equation:
+>
+> ```
+> > import Control.Monad
+> > :t (<=<)
+(<=<) :: Monad m => (b -> m c) -> (a -> m b) -> a -> m c
+> > :t \f g -> lift f <=< lift g
+> \f g -> lift f <=< lift g
+  :: Monad m => (b -> c) -> (a -> b) -> a -> m c
+> ```
+>
+> You can tell by staring at the type that there's really only one thing the function can do, and it must involve `f . g`.
+>
+> Here's the monad laws in terms of `return` and `>>=` (`unit` and `bind`):
+>
+> * `return a >>= k  ==  k a`
+> * `m >>= return  ==  m`
+> * `m >>= (\x -> k x >>= h)  ==  (m >>= k) >>= h`
+>
+> Here's the monad laws in terms of return and `>=>` (which is the flip of `<=<`, or Dan's `*`):
+>
+> * `return >=> g == g`
+> * `f >=> return == f`
+> * `(f >=> g) >=> h == f >=> (g >=> h)`
+>
+> See section 3 of https://wiki.haskell.org/Monad_laws
 
 ## Part Two: dealing with multivalued functions
 
