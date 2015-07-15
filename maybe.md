@@ -61,3 +61,48 @@ Then, let's define a function "increment" that will take a `Maybe Int` and incre
 ```
 
 Significantly easier than I expected!
+
+And, in case we want to use functions with multiple inputs:
+
+```
+> let summate x y = x + y
+> liftM2 summate (Some 4) (Some 5)
+"Some 9"
+```
+
+Note that `summate` returns a number, not a `Some(number)`:
+
+```
+> let summate x y = Some(x + y)
+> liftM2 summate (Some 4) (Some 5)
+"Some 9"
+```
+
+Yuck!
+
+Let's make `Maybe'` an `Applicative Functor` to make this nicer (lifted directly from https://en.wikibooks.org/wiki/Haskell/Applicative_functors):
+
+```
+> import Control.Applicative
+> :{
+instance Functor Maybe' where
+    fmap f Nada = Nada
+    fmap f (Some x) = Some (f x)
+instance Applicative Maybe' where
+    pure = Some
+    (Some f) <*> (Some y) = Some (f y)
+    _        <*> _        = Nada
+:}
+> fmap (+1) (Some 4)
+"Some 5"
+> fmap (+1) Nada
+"Nada"
+> (Some (+1)) <*> (Some 5)
+"Some 6"
+> (+) <$> (Some 4) <*> (Some 5)
+"Some 9"
+```
+
+Much better!
+
+Note that both `(<$>)` and `(<*>)` are in `Control.Applicative`. We define the behaviour of `(<*>)` but not `(<$>)`.
