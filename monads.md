@@ -319,16 +319,29 @@ Next, we define `lift`, so that `f * g == (bind f) . g` and `lift f == lift (uni
 Note, importantly, that when the article says `bind f . g`, this is equivalent to `(bind f) . g`, NOT `bind (f . g)`. This is easy to see, and the latter won't type-check anyway.
 
 ```
-> let lift = unit
+> let lift f = unit . f
 > :t (bind sqrt) . cbrt
 (bind sqrt) . cbrt :: Complex Float -> [Complex Float]
 ```
 
 ## Haskell monad syntactic sugar
 
-So at this point we've seen the same pattern twice: some data type and functions for which we define `bind` and `unit` - in the Haskell world, `unit` is known as `return`. As we've seen in
-both examples, `lift` and `unit` are equivalent so we can think of `return` as being `unit` or `lift`, whichever makes more sense. Together, these should obey the Monad Laws (look on Wikipedia for these).
+So at this point we've seen the same pattern twice: some data type and functions for which we define `bind` and `unit` - in the Haskell world, `unit` is known as `return`. Together, these should obey the Monad Laws (look on Wikipedia for these).
 It is expected but not verified by GHCI.
+
+In an earlier version of this document I stated that `lift` and `unit` are equivalent. This is false; @sciolizer pointed this out, and that `lift` does not have an equivalent in the Haskell libraries but it's easy to implement:
+
+```
+> :t unit
+unit :: t -> (t, [t1])
+> :t lift
+lift :: (a -> b) -> a -> (b, [t1])
+> let lift f = unit . f
+> :t lift
+lift :: (a -> b) -> a -> [b]
+> let lift f = return . f
+lift :: Monad m => (a -> b) -> a -> m b
+```
 
 It is then revealed that we have implemented all the components parts of a monad, twice. A monad is the 3-tuple `(m,unit,bind)` where `m` is the type-class `Debuggable`, `Multivalued`,
 `Randomised`, etc. 
@@ -400,9 +413,9 @@ Hooray!
 The `newtype` syntax befuddled me for a while. The above `newtype` line is equivalent to:
 
 ```
-data Debuggable a = Debuggable a String
+data Debuggable a = Debuggable (a, String)
 runDebuggable :: Debuggable a -> (a,String)
-runDebuggable (Debuggable a b) = (a,b)
+runDebuggable (Debuggable x) = x
 ```
 
 Now for `Multivalued`:
@@ -426,3 +439,69 @@ instance Monad Multivalued where
 ```
 
 Huzzah! Amazing!
+
+## An aside: `Applicative Functor` and `Monad`
+> @sciolizer: 
+>
+> Spoiler:
+> the generalized version of `concat` is `Control.Monad.join`,
+> the generalized verson of `map` is `Data.Functor.fmap`.
+
+(We see that and play around with it in applicative-functor.md)
+
+> Monad could have (and probably should have) been defined like this:
+>
+> ```
+> class (Applicative m) => Monad m where
+>    join :: m (m a) -> m a
+> ```
+> 
+> and then `>>=` would be a library function instead of something you had to implement:
+>
+> ```
+> > let (>>=) f x = join (fmap f x)
+> ```
+>
+> But instead the standard library did it the opposite way (before applicatives had been discovered by mathematicians) - you must implement `>>=`, but you get join for free as a library function.
+>
+> Fun exercise: implement join
+>
+> ```
+> join :: (Monad m) => m (m a) -> m a
+> join = ???
+> ```
+>
+> You can see the answer in the [standard library source code](https://hackage.haskell.org/package/base-4.7.0.2/docs/src/Control-Monad.html#join)
+
+Let's try our hand at it, and reimplement our `Multivalued` monad in terms of `join`. Since we know that `>>=` can be implemented with `join`, let's find our `bind` implementation (for multivalued) and generalize it:
+
+```
+> let bind f x = concat $ map f $ x
+> :t concat
+concat :: [[a]] -> [a]
+> :t map
+map :: (a -> b) -> [a] -> [b]
+> :t fmap
+fmap :: Functor f => (a -> b) -> f a -> f b
+```
+
+So we have a generic form of `map` in `fmap`:
+
+```
+> let bind f x = concat $ fmap f $ x
+> bind cbrt (sqrt x)
+[1.2920746 :+ 0.20129432,(-0.82036316) :+ 1.0183222,(-0.4717113) :+ (-1.2196164),1.2920746 :+ 0.20129432,(-0.82036316) :+ 1.0183222,(-0.4717113) :+ (-1.2196164)]
+```
+
+So, as it turns out, either `bind` or `join` must be defined for a particular monadic type, and then the other can be defined more generally. In other words, we can do only one of the following: `let bind f x = join $ fmap f $ x` OR `let join f = bind f`.
+
+Up until this point, we have been implementing `bind` for each monad and getting `join` for free; this is generally what one does in Haskell. 
+
+If we want to implement `bind` in the generic way and `join` in the specific way: 
+
+```
+> let join' = concat'
+> let bind f x = join' $ fmap f $ x
+> bind cbrt (sqrt x)
+[1.2920746 :+ 0.20129432,(-0.82036316) :+ 1.0183222,(-0.4717113) :+ (-1.2196164),1.2920746 :+ 0.20129432,(-0.82036316) :+ 1.0183222,(-0.4717113) :+ (-1.2196164)]
+```
