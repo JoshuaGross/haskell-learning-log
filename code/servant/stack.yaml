@@ -1,0 +1,9 @@
+flags: {}
+extra-package-dbs: []
+packages:
+- '.'
+extra-deps:
+- blaze-0.0.2
+- servant-0.4.4.6
+- servant-lucid-0.4.4.6
+resolver: lts-4.2
