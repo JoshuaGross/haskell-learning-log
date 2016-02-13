@@ -24,9 +24,11 @@ class HasSomeArbitaryClass a where
 data TypeA = TypeA { _field1 :: Int } deriving Show
 makeClassyConstraints ''TypeA [''Show, ''HasSomeArbitaryClass]
 data TypeB = TypeB { _field2 :: Int } deriving Show
-makeClassyConstraints ''TypeB [''Show, ''HasSomeArbitaryClass]
+makeClassyConstraints ''TypeB [''Show]
 data TypeC = TypeC { _fieldForA :: TypeA, _fieldForB :: TypeB } deriving Show
-makeClassyConstraints ''TypeC [''Show, ''HasSomeArbitaryClass]
+makeClassyConstraints ''TypeC [''HasTypeA, ''HasTypeB]
+
+-- (HasTypeA a, HasTypeB a) => TypeC a
 
 instance HasSomeArbitaryClass TypeA where
   doSomething = show
