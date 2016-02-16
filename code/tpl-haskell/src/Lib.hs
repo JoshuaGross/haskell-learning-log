@@ -4,6 +4,7 @@ module Lib where
 
 import           CustomShow
 import           MakeClassyConstraints
+import           MakeClassySubclassing
 
 data MyData = MyData
     { foo :: String
@@ -44,6 +45,23 @@ instance HasTypeA TypeC where
 instance HasTypeB TypeC where
   typeB = fieldForB
 
+--
+-- Test lens subclassing
+--
+data TypeX = TypeX { _x :: Int } deriving Show
+makeClassyConstraints ''TypeX []
+data TypeY = TypeY { _y :: Int } deriving Show
+makeClassyConstraints ''TypeY []
+
+xyz = [d| data TypeZ = TypeZ { _z :: Int } deriving Show |]
+xyz' = [d| data TypeZ = TypeZ deriving Show |]
+
+makeClassySubclassing [d| data TypeZ = TypeZ { _z :: Int } deriving Show |] [''TypeX, ''TypeY]
+-- it would be really nice to not need a separate line for this, eventually...
+--makeClassyConstraints ''TypeZ [''HasTypeX, ''HasTypeY]
+
+-- TODO: 2nd level, 3rd level inheritance... etc.
+
 -- To view some TH in ghci:
 -- Follow along with https://ocharles.org.uk/blog/guest-posts/2014-12-22-template-haskell.html
 -- stack ghci --ghc-options -XTemplateHaskell
@@ -61,4 +79,7 @@ instance HasTypeB TypeC where
 -- Test `reify` on a type:
 -- \> $(stringE . show =<< reify ''Bool)
 -- \> $(stringE . show =<< reify ''Int)
--- \> $(stringE . show =<< reify ''Int)
+-- \> $(stringE . show =<< reify ''TypeZ)
+
+-- play around with `Name`:
+-- \> $(stringE . show =<< reify (Name (OccName "TypeZ") NameS))
