@@ -6,6 +6,9 @@ import           CustomShow
 import           MakeClassyConstraints
 import           MakeClassySubclassing
 
+import           Control.Lens
+import           Control.Lens.Internal.FieldTH
+
 data MyData = MyData
     { foo :: String
     , bar :: Int
@@ -53,12 +56,18 @@ makeClassyConstraints ''TypeX []
 data TypeY = TypeY { _y :: Int } deriving Show
 makeClassyConstraints ''TypeY []
 
-xyz = [d| data TypeZ = TypeZ { _z :: Int } deriving Show |]
-xyz' = [d| data TypeZ = TypeZ deriving Show |]
-
 makeClassySubclassing [d| data TypeZ = TypeZ { _z :: Int } deriving Show |] [''TypeX, ''TypeY]
--- it would be really nice to not need a separate line for this, eventually...
---makeClassyConstraints ''TypeZ [''HasTypeX, ''HasTypeY]
+makeClassyConstraints ''TypeZ [''HasTypeX, ''HasTypeY]
+deriveClassyInstances ''TypeZ [''TypeX, ''TypeY]
+
+z' = TypeZ (TypeY 1) (TypeX 2) 5
+
+-- Test lens 2nd-level subclassing...
+makeClassySubclassing [d| data TypeZZXY = TypeZZXY { _zz :: Int } deriving Show |] [''TypeZ]
+makeClassyConstraints ''TypeZZXY [''HasTypeZ]
+deriveClassyInstances ''TypeZZXY [''TypeZ]
+
+zzxy' = TypeZZXY (TypeZ (TypeY 1) (TypeX 2) 3) 4
 
 -- TODO: 2nd level, 3rd level inheritance... etc.
 
