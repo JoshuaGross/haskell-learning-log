@@ -69,6 +69,13 @@ deriveClassyInstances ''TypeZZXY [''TypeZ]
 
 zzxy' = TypeZZXY (TypeZ (TypeY 1) (TypeX 2) 3) 4
 
+-- Test lens 3rd-level subclassing
+makeClassySubclassing [d| data TypeZZXY2 = TypeZZXY2 { _zz2 :: Int } deriving Show |] [''TypeZZXY]
+makeClassyConstraints ''TypeZZXY2 [''HasTypeZZXY]
+deriveClassyInstances ''TypeZZXY2 [''TypeZZXY]
+
+zzxy2' = TypeZZXY2 $ TypeZZXY (TypeZ (TypeY 2) (TypeX 3) 4) 5
+
 -- TODO: 2nd level, 3rd level inheritance... etc.
 
 -- To view some TH in ghci:

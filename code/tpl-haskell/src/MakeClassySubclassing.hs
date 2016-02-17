@@ -46,17 +46,9 @@ deriveClassyInstances :: Name -> [Name] -> DecsQ
 deriveClassyInstances name typeNames = do
   zippedNames <- typeToZippedTypeAndClass typeNames
 
-  qRunIO $ do
-    print "BEFORE ISH"
-    print zippedNames
-    print $ map (\(x, y) -> ppr y) zippedNames
-    print "AFTER ISH"
-
   depWithFields <- reify name
 
-  insts <- declareInstances depWithFields zippedNames
-  subInsts <- declareSubInstances depWithFields zippedNames
-  return (insts ++ subInsts)
+  declareInstances depWithFields zippedNames
 
 -- Given a list [''TypeX, ''TypeY, ...], return [(''TypeX, reified ''HasTypeX), ...]
 typeToZippedTypeAndClass :: [Name] -> Q [(Name, Info)]
@@ -81,47 +73,48 @@ reifyNames [] = return []
 --  declare instances of instancetype m => decl m.
 declareInstances :: Info -> [(Name, Info)] -> DecsQ
 declareInstances (TyConI (d@(DataD _ _ _ _ _))) classes = do
-  mapM (declareInstance d) classes
+  insts <- mapM (declareInstance d) classes
+  subInsts <- mapM (declareSubInstancesOf' d) classes
+  return (insts ++ (concat subInsts))
 declareInstances d [] = return []
 
 -- First argument should be a DataD MyType, declaring a record-based data-type.
 -- Second argument is a (TypeX, HasTypeX) Name,Info pair.
 -- Will return an instance declaration of HasTypeX MyType.
 declareInstance :: Dec -> (Name,Info) -> Q Dec
-declareInstance (DataD _ name _ recs _) (typeName, cls) = do
+declareInstance (DataD _ name _ _ _) (typeName, cls) = do
   let clsType = getClsType cls
   let instancingType = AppT clsType (ConT name)
-  let clsFields = (getClsFields cls)
+  let clsFields = getClsFields cls
   let clsFieldNames = map getFieldName clsFields
-  dot <- runQ [| (.) |]
   let specialFieldTypeName = head clsFieldNames
   let specialFieldAccessor = (manipulateName stripFirstChar) $ fieldNameForClassName typeName
-  let instanceFn = buildInstanceFn dot specialFieldTypeName undefined specialFieldAccessor (head clsFieldNames) 0
+  instanceFn <- buildInstanceFn specialFieldTypeName [specialFieldAccessor] (head clsFieldNames) 0
   return $ InstanceD [] instancingType [instanceFn]
 
--- Declare sub instances: we are an instance of TypeZ, and it
+-- Declare sub instance: we are an instance of TypeZ, and it
 --  has a type constraint on TypeX and TypeY. We need to implement
 --  the TypeX and TypeY interfaces as well.
-declareSubInstances :: Info -> [(Name, Info)] -> DecsQ
-declareSubInstances (TyConI (d@(DataD _ _ _ _ _))) classes = do
-  decs <- mapM (declareSubInstancesOf' d) classes
-  return $ concat decs
-declareSubInstances d [] = return []
-
 declareSubInstancesOf' :: Dec -> (Name, Info) -> DecsQ
-declareSubInstancesOf' (DataD _ name _ _ _) (typeName, ClassI (ClassD cxt className _ _ _) _) = do
-  typeReified <- reify typeName
-  maybeDecs <- mapM (declareInstanceOfConstraint name typeName typeReified) cxt
-  return $ catMaybes maybeDecs
+declareSubInstancesOf' d@(DataD _ name _ _ _) (typeName, ClassI (ClassD cxt className _ _ _) _) = do
+  -- The "Lib.X" token will not be in scope, but "X" will be
+  typeReified <- reify $ (Name (OccName $ last $ splitStr '.' $ show typeName) NameS)
+
+  decs <- mapM (declareInstanceOfConstraint name typeName typeReified) cxt
+
+  return $ (concat decs)
 
   where
+
+  extractContextClass :: Type -> Name
+  extractContextClass (AppT (ConT cxtCls) _) = cxtCls
+  extractContextClass _ = undefined
 
   -- Given the reified data type we're inheriting from (TypeX) and its
   --  constraint (HasTypeN => TypeX), figure out if TypeX has a field for
   --  TypeN.
-  -- TODO: more than 1 obvious level of nesting
-  declareInstanceOfConstraint :: Name -> Name -> Info -> Type -> Q (Maybe Dec)
-  declareInstanceOfConstraint dataName typeName typeReified@(TyConI (DataD cxt _ _ [(RecC _ typeRecs)] _)) (AppT (ConT constraintName) (VarT _)) = do
+  declareInstanceOfConstraint :: Name -> Name -> Info -> Type -> DecsQ
+  declareInstanceOfConstraint dataName typeName (TyConI (DataD _ _ _ [(RecC _ typeRecs)] _)) (AppT (ConT constraintName) (VarT _)) = do
     let constraintNameWithoutHas' = stripHas $ show constraintName
     let constraintNameWithoutHas = Name (OccName constraintNameWithoutHas') NameS
     let constraintGetterFieldName = fieldNameForClassNameWithDots constraintNameWithoutHas
@@ -129,27 +122,29 @@ declareSubInstancesOf' (DataD _ name _ _ _) (typeName, ClassI (ClassD cxt classN
 
     classTypeReified <- reify constraintName
 
+    -- recurse - get sub-sub classes, etc...
+    subsubinsts <- declareSubInstancesOf' d (constraintNameWithoutHas, classTypeReified)
+
     let clsType = getClsType classTypeReified
     let instancingType = AppT clsType (ConT dataName)
     let clsFields = (getClsFields classTypeReified)
     let clsFieldNames = map getFieldName clsFields
-    dot <- runQ [| (.) |]
     let specialFieldTypeName = head clsFieldNames
     let specialFieldAccessor = (manipulateName stripFirstChar) $ fieldNameForClassName $ constraintNameWithoutHas
     let specialFieldParentAccessor = (manipulateName stripFirstChar) $ fieldNameForClassName typeName
 
-    let instanceFn = buildInstanceFn dot specialFieldTypeName specialFieldParentAccessor specialFieldAccessor (head clsFieldNames) 1
+    instanceFn <- buildInstanceFn specialFieldTypeName [specialFieldParentAccessor, specialFieldAccessor] (head clsFieldNames) 1
 
-    return $ if typeHasFieldFor then Just $ InstanceD [] instancingType [instanceFn] else Nothing
-  declareInstanceOfConstraint _ _ _ _ = return Nothing
+    return $ (if typeHasFieldFor then [InstanceD [] instancingType [instanceFn]] else []) ++ subsubinsts
+  declareInstanceOfConstraint _ _ _ _ = return []
 
-buildInstanceFn :: Exp -> Name -> Name -> Name -> Name -> Int -> Dec
-buildInstanceFn dot specialFieldTypeName specialFieldAccessor specialFieldParentAccessor n nestLevel =
-  FunD n [Clause [] (NormalB $ InfixE accessThis dot accessField) []]
+buildInstanceFn :: Name -> [Name] -> Name -> Int -> Q Dec
+buildInstanceFn specialFieldTypeName accessors n nestLevel = do
+  dot <- runQ [| (.) |]
+  let expr' = foldr (\e prev -> Just $ InfixE e dot prev) (last accessors') (init accessors')
+  return $ FunD n [Clause [] (NormalB $ fromJust expr') []]
   where
-  accessThis = if nestLevel == 0 then id' else Just $ VarE $ specialFieldAccessor
-  accessField = Just $ VarE $ specialFieldParentAccessor
-  id' = Just $ VarE $ Name (OccName "id") NameS
+  accessors' = map (Just . VarE) accessors
 
 getClsType :: Info -> Type
 getClsType (ClassI (ClassD _ name _ _ _) _) = ConT name
@@ -157,6 +152,7 @@ getClsType _ = undefined
 
 getClsFields :: Info -> [Dec]
 getClsFields (ClassI (ClassD _ _ _ _ fields) _) = fields
+getClsFields _ = undefined
 
 -- Lens'd field types are pretty complicated. For now we're just
 -- interested in pulling out the name.
