@@ -42,13 +42,22 @@ makeClassySubclassing decs typeNames = do
 
 -- Given a type name and a list of lens types to "inherit" from,
 --  construct instance declarations for field access.
-deriveClassyInstances :: Name -> [Name] -> DecsQ
-deriveClassyInstances name typeNames = do
-  zippedNames <- typeToZippedTypeAndClass typeNames
-
+deriveClassyInstances :: Name -> DecsQ
+deriveClassyInstances name = do
   depWithFields <- reify name
+  classDep <- reify ((nameWithoutModulePrefix . nameWithHasPrefix) name)
+
+  -- get instances that we may be able to derive
+  let constraints = map (nameWithoutHasPrefix . extractConstraintClass) (getConstraints classDep)
+  zippedNames <- typeToZippedTypeAndClass constraints
 
   declareInstances depWithFields zippedNames
+
+  where
+
+  getConstraints :: Info -> [Type]
+  getConstraints (TyConI (DataD cxt _ _ _ _)) = cxt
+  getConstraints (ClassI (ClassD cxt _ _ _ _) _) = cxt
 
 -- Given a list [''TypeX, ''TypeY, ...], return [(''TypeX, reified ''HasTypeX), ...]
 typeToZippedTypeAndClass :: [Name] -> Q [(Name, Info)]
@@ -106,10 +115,6 @@ declareSubInstancesOf' d@(DataD _ name _ _ _) (typeName, ClassI (ClassD cxt clas
 
   where
 
-  extractContextClass :: Type -> Name
-  extractContextClass (AppT (ConT cxtCls) _) = cxtCls
-  extractContextClass _ = undefined
-
   -- Given the reified data type we're inheriting from (TypeX) and its
   --  constraint (HasTypeN => TypeX), figure out if TypeX has a field for
   --  TypeN.
@@ -154,6 +159,10 @@ getClsFields :: Info -> [Dec]
 getClsFields (ClassI (ClassD _ _ _ _ fields) _) = fields
 getClsFields _ = undefined
 
+extractConstraintClass :: Type -> Name
+extractConstraintClass (AppT (ConT cxtCls) _) = cxtCls
+extractConstraintClass _ = undefined
+
 -- Lens'd field types are pretty complicated. For now we're just
 -- interested in pulling out the name.
 getFieldName :: Dec -> Name
@@ -186,6 +195,10 @@ addFieldForClassToCon (RecC name vars) clsName hasClsInst =
         clsName' = fieldNameForClassName clsName
 addFieldForClassToCon _ _ _ = undefined
 
+--
+-- String manipulation
+--
+
 fieldNameForClassName' :: Bool -> Name -> Name
 fieldNameForClassName' stripDots n =
   Name (OccName (dots ++ "_fieldFor" ++ (removeDots $ show n))) NameS
@@ -197,12 +210,18 @@ fieldNameForClassName = fieldNameForClassName' True
 fieldNameForClassNameWithDots :: Name -> Name
 fieldNameForClassNameWithDots = fieldNameForClassName' False
 
-manipulateName :: (String -> String) -> Name -> Name
-manipulateName fn (Name (OccName s) NameS) = Name (OccName (fn s)) NameS
+nameWithHasPrefix :: Name -> Name
+nameWithHasPrefix = manipulateName (\s -> let s' = splitStr '.' s in concat $ intersperse "." $ (init s') ++ ["Has" ++ (last s')])
 
---
--- String manipulation
---
+nameWithoutHasPrefix :: Name -> Name
+nameWithoutHasPrefix = manipulateName (\s -> let s' = splitStr '.' s in concat $ intersperse "." $ (init s') ++ [stripHas (last s')])
+
+nameWithoutModulePrefix :: Name -> Name
+nameWithoutModulePrefix = manipulateName (\s -> let s' = splitStr '.' s in last s')
+
+manipulateName :: (String -> String) -> Name -> Name
+manipulateName fn n = Name (OccName (fn $ show n)) NameS
+
 stripFirstChar :: String -> String
 stripFirstChar (s:ss) = ss
 
