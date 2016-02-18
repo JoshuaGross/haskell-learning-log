@@ -56,28 +56,22 @@ makeClassyConstraints ''TypeX []
 data TypeY = TypeY { _y :: Int } deriving Show
 makeClassyConstraints ''TypeY []
 
---data TypeZ' = TypeZ' { _z' :: Int } deriving Show
---makeClassyAwesome ''TypeZ' [''TypeX, ''TypeY]
+data TypeZ' = TypeZ' { _z' :: Int } deriving Show
+makeClassyAwesome ''TypeZ' [''TypeX, ''TypeY] [''Show] []
 
-makeClassySubclassing [d| data TypeZ = TypeZ { _z :: Int } deriving Show |] [''TypeX, ''TypeY]
-makeClassyConstraints ''TypeZ [''HasTypeX, ''HasTypeY]
-deriveClassyInstances ''TypeZ
-
-z' = TypeZ (TypeY 1) (TypeX 2) 5
+z' = TypeZ (TypeY 1) (TypeX 2) 3
 
 -- Test lens 2nd-level subclassing...
-makeClassySubclassing [d| data TypeZZXY = TypeZZXY { _zz :: Int } deriving Show |] [''TypeZ]
-makeClassyConstraints ''TypeZZXY [''HasTypeZ]
-deriveClassyInstances ''TypeZZXY
+data TypeZZXY' = TypeZZXY' { _zz' :: Int } deriving Show
+makeClassyAwesome ''TypeZZXY' [''TypeZ] [''Show] []
 
 zzxy' = TypeZZXY (TypeZ (TypeY 1) (TypeX 2) 3) 4
 
 -- Test lens 3rd-level subclassing
-makeClassySubclassing [d| data TypeZZXY2 = TypeZZXY2 { _zz2 :: Int } deriving Show |] [''TypeZZXY]
-makeClassyConstraints ''TypeZZXY2 [''HasTypeZZXY]
-deriveClassyInstances ''TypeZZXY2
+data TypeZZXY2' = TypeZZXY2' { _zz2' :: Int } deriving Show
+makeClassyAwesome ''TypeZZXY2' [''TypeZZXY] [''Show] []
 
-zzxy2' = TypeZZXY2 $ TypeZZXY (TypeZ (TypeY 2) (TypeX 3) 4) 5
+zzxy2' = TypeZZXY2 (TypeZZXY (TypeZ (TypeY 2) (TypeX 3) 4) 5) 6
 
 -- To view some TH in ghci:
 -- Follow along with https://ocharles.org.uk/blog/guest-posts/2014-12-22-template-haskell.html

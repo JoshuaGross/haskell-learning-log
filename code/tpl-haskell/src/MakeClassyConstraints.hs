@@ -1,14 +1,23 @@
 {-# LANGUAGE TemplateHaskell #-}
 
-module MakeClassyConstraints (makeClassyConstraints) where
+module MakeClassyConstraints (makeClassyConstraints, makeClassyConstraintsForDec) where
 
 import           Control.Lens
+import           Control.Lens.Internal.FieldTH
 import           Language.Haskell.TH
 
 makeClassyConstraints :: Name -> [Name] -> DecsQ
 makeClassyConstraints n ns = do
   decs <- makeClassy n
   return (makeClassyConstraints' ns decs)
+
+makeClassyConstraintsForDec :: Dec -> [Name] -> DecsQ
+makeClassyConstraintsForDec d ns = do
+  decs <- makeClassyForDec d
+  return (makeClassyConstraints' ns decs)
+
+makeClassyForDec :: Dec -> DecsQ
+makeClassyForDec = makeFieldOpticsForDec classyRules
 
 makeClassyConstraints' :: [Name] -> [Dec] -> [Dec]
 makeClassyConstraints' ns (d:ds) = addConstraintsTo d ns : ds

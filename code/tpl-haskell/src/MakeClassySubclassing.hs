@@ -11,8 +11,43 @@ import           GHC.Err
 import           Language.Haskell.TH
 import           Language.Haskell.TH.Ppr
 import           Language.Haskell.TH.Syntax
+import           MakeClassyConstraints
 
 -- \> $(stringE . show =<< reify (Name (OccName "TypeZ") NameS))
+
+-- makeClassyAwesome:
+-- 1. Inject fields necessary to hold subclassed values
+-- 2. makeClassy on new data type
+-- 3. Derive instances for field accessors all the way up the "inheritance" chain
+--
+-- The type name passed in must end in a prime (').
+--
+-- Haskell doesn't seem to return the list of names that `n` is deriving, so it must be
+--  provided as an argument.
+makeClassyAwesome :: Name -> [Name] -> [Name] -> [Name] -> DecsQ
+makeClassyAwesome n constraints derives extraConstraints = do
+  let constraintsWithHas = map (nameWithoutModulePrefix . nameWithHasPrefix) constraints
+
+  recordType'' <- reify n
+  let recordType' = removePrimesFromTyCon recordType''
+  recordType <- makeClassySubclassingForDec recordType' (constraints ++ extraConstraints)
+
+  depWithConstraints <- makeClassyConstraintsForDec (head recordType) constraintsWithHas
+
+  derivedInstances <- deriveClassyInstancesForDec (head recordType) (head depWithConstraints)
+
+  return $ recordType ++ depWithConstraints ++ derivedInstances
+
+  where
+
+  removePrimesFromTyCon :: Info -> Dec
+  removePrimesFromTyCon (TyConI (DataD a bName c [RecC dName fields] e)) =
+    (DataD a bName' c [RecC dName' (map removePrimesFromField fields)] (e ++ derives))
+    where bName' = removeTerminalPrime bName
+          dName' = removeTerminalPrime dName
+          removePrimesFromField (x,y,z) = (removeTerminalPrime x, y, z)
+          removeTerminalPrime = nameWithoutModulePrefix . (manipulateName $ stripSuffix "'")
+  removePrimesFromTyCon _ = undefined
 
 -- Usage:
 --
@@ -30,23 +65,18 @@ import           Language.Haskell.TH.Syntax
 -- TODO: figure out what instance fields need to be implemented: should be (.) (parent implementation) (myFieldForClass)
 -- TODO: inject instance implementing each type
 -- TODO: sub-instances of the injected type
-makeClassySubclassing :: DecsQ -> [Name] -> DecsQ
-makeClassySubclassing decs typeNames = do
-  decs' <- decs
-
+makeClassySubclassingForDec :: Dec -> [Name] -> DecsQ
+makeClassySubclassingForDec dec typeNames = do
   zippedNames <- typeToZippedTypeAndClass typeNames
 
-  depsWithFields <- classyDataDecl decs' zippedNames
+  depsWithFields <- classyDataDecl [dec] zippedNames
 
   return depsWithFields
 
 -- Given a type name and a list of lens types to "inherit" from,
 --  construct instance declarations for field access.
-deriveClassyInstances :: Name -> DecsQ
-deriveClassyInstances name = do
-  depWithFields <- reify name
-  classDep <- reify $ (nameWithoutModulePrefix . nameWithHasPrefix) name
-
+deriveClassyInstancesForDec :: Dec -> Dec -> DecsQ
+deriveClassyInstancesForDec depWithFields classDep = do
   -- get instances that we may be able to derive
   let constraints = map (nameWithoutHasPrefix . extractConstraintClass) (getConstraints classDep)
   zippedNames <- typeToZippedTypeAndClass constraints
@@ -55,9 +85,10 @@ deriveClassyInstances name = do
 
   where
 
-  getConstraints :: Info -> [Type]
-  getConstraints (TyConI (DataD cxt _ _ _ _)) = cxt
-  getConstraints (ClassI (ClassD cxt _ _ _ _) _) = cxt
+  getConstraints :: Dec -> [Type]
+  getConstraints (DataD cxt _ _ _ _) = cxt
+  getConstraints (ClassD cxt _ _ _ _) = cxt
+  getConstraints _ = undefined
 
 -- Given a list [''TypeX, ''TypeY, ...], return [(''TypeX, reified ''HasTypeX), ...]
 typeToZippedTypeAndClass :: [Name] -> Q [(Name, Info)]
@@ -71,8 +102,8 @@ typeToZippedTypeAndClass typeNames = do
 
 -- Given a main declaration, and zipped pairs of (type, instancetype),
 --  declare instances of instancetype m => decl m.
-declareInstances :: Info -> [(Name, Info)] -> DecsQ
-declareInstances (TyConI (d@(DataD _ _ _ _ _))) classes = do
+declareInstances :: Dec -> [(Name, Info)] -> DecsQ
+declareInstances d@(DataD _ _ _ _ _) classes = do
   insts <- mapM (declareInstance d) classes
   subInsts <- mapM (declareSubInstancesOf' d) classes
   return (insts ++ (concat subInsts))
@@ -113,7 +144,7 @@ declareSubInstancesOf' d@(DataD _ name _ _ _) (typeName, ClassI (ClassD cxt clas
   declareInstanceOfConstraint dataName typeName (TyConI (DataD _ _ _ [(RecC _ typeRecs)] _)) (AppT (ConT constraintName) (VarT _)) = do
     let constraintNameWithoutHas = nameWithoutHasPrefix constraintName
     let constraintGetterFieldName = fieldNameForClassNameWithDots constraintNameWithoutHas
-    let typeHasFieldFor = (== 1) $ length $ filter (\(recName, _, _) -> (show recName) == (show constraintGetterFieldName)) typeRecs
+    let typeHasFieldFor = (== 1) $ length $ filter (\(recName, _, _) -> (show $ nameWithoutModulePrefix recName) == (show $ nameWithoutModulePrefix constraintGetterFieldName)) typeRecs
 
     classTypeReified <- reify constraintName
 
@@ -189,10 +220,14 @@ addFieldForClassToCon _ _ _ = undefined
 -- String manipulation
 --
 
+-- TODO: ensure that module part is always in the name; sometimes it's not present, so names
+--  are inconsistent, for now, unless we always strip module
 fieldNameForClassName' :: Bool -> Name -> Name
 fieldNameForClassName' stripDots n =
-  Name (OccName (dots ++ "_fieldFor" ++ (removeDots $ show n))) NameS
-  where dots = if stripDots then "" else (++ ".") $ concat $ intersperse "." $ init $ splitStr '.' $ show n
+  --Name (OccName (dots ++ "_fieldFor" ++ (removeDots $ show n))) NameS
+  Name (OccName (dots ++ "_fieldFor" ++ (show $ nameWithoutModulePrefix n))) NameS
+  where dots = ""
+    --dots = if stripDots then "" else (++ ".") $ concat $ intersperse "." $ init $ splitStr '.' $ show n
 
 fieldNameForClassName :: Name -> Name
 fieldNameForClassName = fieldNameForClassName' True
@@ -214,6 +249,14 @@ manipulateName fn n = Name (OccName (fn $ show n)) NameS
 
 stripFirstChar :: String -> String
 stripFirstChar (s:ss) = ss
+
+stripSuffix :: String -> String -> String
+stripSuffix suf str =
+  let suf' = reverse suf in
+  let str' = reverse str in
+  case stripPrefix suf' str' of
+    Nothing -> str
+    Just res -> reverse res
 
 -- TODO: don't use fromJust here
 stripHas :: String -> String
