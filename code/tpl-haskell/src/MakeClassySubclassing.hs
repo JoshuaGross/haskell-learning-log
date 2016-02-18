@@ -45,7 +45,7 @@ makeClassySubclassing decs typeNames = do
 deriveClassyInstances :: Name -> DecsQ
 deriveClassyInstances name = do
   depWithFields <- reify name
-  classDep <- reify ((nameWithoutModulePrefix . nameWithHasPrefix) name)
+  classDep <- reify $ (nameWithoutModulePrefix . nameWithHasPrefix) name
 
   -- get instances that we may be able to derive
   let constraints = map (nameWithoutHasPrefix . extractConstraintClass) (getConstraints classDep)
@@ -62,21 +62,12 @@ deriveClassyInstances name = do
 -- Given a list [''TypeX, ''TypeY, ...], return [(''TypeX, reified ''HasTypeX), ...]
 typeToZippedTypeAndClass :: [Name] -> Q [(Name, Info)]
 typeToZippedTypeAndClass typeNames = do
-  let namesStr = map (\x -> splitStr '.' $ show x) typeNames
-  let clsNamesStr = map (\x -> "Has" ++ (last x)) namesStr
-  let clsNames = map (\x -> (Name (OccName x) NameS)) clsNamesStr
+  let clsNames = map (nameWithoutModulePrefix . nameWithHasPrefix) typeNames
 
-  reifiedClsNames <- reifyNames clsNames
+  reifiedClsNames <- mapM reify clsNames
 
   let zippedNames = zip typeNames reifiedClsNames
   return zippedNames
-
-reifyNames :: [Name] -> Q [Info]
-reifyNames (n:ns) = do
-  n' <- reify n
-  ns' <- reifyNames ns
-  return (n' : ns')
-reifyNames [] = return []
 
 -- Given a main declaration, and zipped pairs of (type, instancetype),
 --  declare instances of instancetype m => decl m.
@@ -107,7 +98,7 @@ declareInstance (DataD _ name _ _ _) (typeName, cls) = do
 declareSubInstancesOf' :: Dec -> (Name, Info) -> DecsQ
 declareSubInstancesOf' d@(DataD _ name _ _ _) (typeName, ClassI (ClassD cxt className _ _ _) _) = do
   -- The "Lib.X" token will not be in scope, but "X" will be
-  typeReified <- reify $ (Name (OccName $ last $ splitStr '.' $ show typeName) NameS)
+  typeReified <- reify $ nameWithoutModulePrefix typeName
 
   decs <- mapM (declareInstanceOfConstraint name typeName typeReified) cxt
 
@@ -120,8 +111,7 @@ declareSubInstancesOf' d@(DataD _ name _ _ _) (typeName, ClassI (ClassD cxt clas
   --  TypeN.
   declareInstanceOfConstraint :: Name -> Name -> Info -> Type -> DecsQ
   declareInstanceOfConstraint dataName typeName (TyConI (DataD _ _ _ [(RecC _ typeRecs)] _)) (AppT (ConT constraintName) (VarT _)) = do
-    let constraintNameWithoutHas' = stripHas $ show constraintName
-    let constraintNameWithoutHas = Name (OccName constraintNameWithoutHas') NameS
+    let constraintNameWithoutHas = nameWithoutHasPrefix constraintName
     let constraintGetterFieldName = fieldNameForClassNameWithDots constraintNameWithoutHas
     let typeHasFieldFor = (== 1) $ length $ filter (\(recName, _, _) -> (show recName) == (show constraintGetterFieldName)) typeRecs
 
