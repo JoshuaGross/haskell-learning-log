@@ -17,10 +17,36 @@ library
   exposed-modules:     Morse
                      , CoArbitrary
                      , Optional
+                     , LearnParsers
+                     , Fractions
   ghc-options:         -Wall -fwarn-tabs
   build-depends:       base >=4.7 && <5
                      , containers
                      , QuickCheck
+                     , trifecta
+                     , raw-strings-qq
+                     , attoparsec
+                     , scotty
+                     , hspec
+                     , containers
+                     , bytestring
+                     , hedis
+                     , mtl
+                     , network-uri
+                     , random
+                     , scotty
+                     , semigroups
+                     , text
+                     , transformers
+                     , QuickCheck
+                     , network
+                     , raw-strings-qq
+                     , sqlite-simple
+                     , trifecta
+                     , raw-strings-qq
+                     , attoparsec
+                     , scotty
+                     , criterion
   hs-source-dirs:      src
   default-language:    Haskell2010
 
@@ -44,6 +70,13 @@ executable catchall
                      , network
                      , raw-strings-qq
                      , sqlite-simple
+                     , trifecta
+                     , raw-strings-qq
+                     , attoparsec
+                     , scotty
+                     , aeson
+                     , wreq
+                     , criterion
 
 executable morse
   hs-source-dirs:      src
@@ -65,6 +98,41 @@ executable morse
                      , network
                      , raw-strings-qq
                      , sqlite-simple
+                     , trifecta
+                     , raw-strings-qq
+                     , attoparsec
+                     , scotty
+                     , aeson
+                     , wreq
+                     , criterion
+
+executable functors
+  hs-source-dirs:      src
+  main-is:             Functors.hs
+  default-language:    Haskell2010
+  build-depends:       base >= 4.7 && < 5
+                     , hspec
+                     , containers
+                     , bytestring
+                     , hedis
+                     , mtl
+                     , network-uri
+                     , random
+                     , scotty
+                     , semigroups
+                     , text
+                     , transformers
+                     , QuickCheck
+                     , network
+                     , raw-strings-qq
+                     , sqlite-simple
+                     , trifecta
+                     , raw-strings-qq
+                     , scotty
+                     , attoparsec
+                     , aeson
+                     , wreq
+                     , criterion
 
 test-suite tests
   ghc-options: -Wall -fno-warn-orphans
@@ -75,4 +143,11 @@ test-suite tests
                      , catchall
                      , containers
                      , QuickCheck
+                     , trifecta
+                     , raw-strings-qq
+                     , attoparsec
+                     , scotty
+                     , aeson
+                     , wreq
+                     , criterion
   default-language:    Haskell2010
